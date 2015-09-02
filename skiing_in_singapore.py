@@ -122,6 +122,14 @@ class SkiMap(object):
 
 
 def find_longest_path(skimap):
+    """
+    Builds directional graph from Ski Map where nodes are map items and
+    edges are possible transitions from upper elevation to adjusted lower items.
+    Returns tuple of longest path length (aka graph diameter - number of edges from upper area to lowest area)
+    and maximum vertical drop of longest paths (i.e. upper node elevation - bottom node elevation)
+    :param SkiMap skimap: map
+    :rtype: tuple[int]
+    """
     skimap.build_nodes()
     print('Total %d nodes' % len(skimap.nodes))
     print('Total %d summits' % len(skimap.summits))
@@ -166,4 +174,4 @@ if __name__ == '__main__':
     longest_path_len, vertical_drop = find_longest_path(skimap)
 
     print()
-    print('email: %d%d@redmart.com?' % (longest_path_len, vertical_drop))
+    print('email: %d%d@redmart.com?' % (longest_path_len+1, vertical_drop))
