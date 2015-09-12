@@ -8,8 +8,10 @@ import java.util.stream.Collectors;
  * Spreadsheet Formula representation.
  */
 public class Formula {
-    private static final Pattern REGEXP_TOKENS = Pattern.compile("(?<const>\\d+)|(?<op>[-+*/])|(?<ref>[A-Z]\\d+)|\\s+");
-    private static final FormulaToken[] tokenPrototypes = {ConstToken.prototype, BinaryOpToken.prototype, ReferenceToken.prototype};
+    private static final Pattern REGEXP_TOKENS =
+            Pattern.compile("(?<const>[-]?\\d+)|(?<op>[-+*/])(?=\\s|$)|(?<ref>[A-Z]\\d+)|(?<inc>[+][+]|[-][-])|\\s+");
+    private static final FormulaToken[] tokenPrototypes = {ConstToken.prototype,
+            BinaryOpToken.prototype, ReferenceToken.prototype, IncToken.prototype};
 
     private Double value;
 
@@ -245,6 +247,24 @@ class ConstToken extends FormulaToken {
     @Override
     public double calc(Deque<FormulaToken> context, Spreadsheet spreadsheet) {
         return value;
+    }
+}
+
+class IncToken extends FormulaToken {
+    static final FormulaToken prototype = new IncToken();
+    private boolean negative;
+
+    @Override
+    protected void setTokenString(String tokenString) { negative = "--".equals(tokenString); }
+
+    @Override
+    public String toString() {
+        return negative? "--": "++";
+    }
+
+    @Override
+    public double calc(Deque<FormulaToken> context, Spreadsheet spreadsheet) {
+        return context.pollLast().calc(context, spreadsheet) + (negative? -1: 1);
     }
 }
 

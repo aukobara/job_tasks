@@ -79,11 +79,29 @@ public class SpreadsheetTest {
         assertEquals(20d / 3 + 2, formula.calc(), 0);
     }
 
+    @Test
+    public void testFormulaNegativeConst() {
+        Formula formula = new Formula("1 2 - -3 +");
+        assertEquals(-4d, formula.calc(), 0);
+    }
+
+    @Test
+    public void testFormulaIncrement() {
+        Formula formula = new Formula("2 3 ++ +");
+        assertEquals(6d, formula.calc(), 0);
+    }
+
+    @Test
+    public void testFormulaDecrement() {
+        Formula formula = new Formula("3 -- 5 + ++");
+        assertEquals(8d, formula.calc(), 0);
+    }
+
     @Test(expected = IllegalArgumentException.class)
     public void testFormulaInvalidRef() {
         Spreadsheet spreadsheet = buildTestSpreadsheet("2 2", "1", "2", "3", "4");
         Formula formula = new Formula("C3");
-        assertEquals(2d * 2d, formula.calc(spreadsheet), 0);
+        assertEquals(4d, formula.calc(spreadsheet), 0);
     }
 
     @Test
@@ -117,7 +135,7 @@ public class SpreadsheetTest {
     @Test(expected = IllegalArgumentException.class)
     public void testSpreadsheetFormulaCyclicDependency() {
         Spreadsheet spreadsheet = buildTestSpreadsheet("2 2", "A2", "B2", "A1 B2 / 2 +", "A1");
-        assertEquals(20d / 3 + 2, spreadsheet.calcCellValue(1, 0), 0);
+        spreadsheet.calcCellValue(1, 0);
     }
 
     @Test
