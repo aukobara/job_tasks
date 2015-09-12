@@ -7,10 +7,8 @@ import java.util.regex.Pattern;
  * Sample usage:
  * // 1. Init reader by header of spreadsheet of 3 rows and 2 columns.
  * SpreadsheetReader reader = new SpreadsheetReader("3 2");
- * // 2. Pass stream of cell formulas
- * reader.readLines(Stream.of("1", "2", "3", "4", "5", "6"));
- * // 3. Build Spreadsheet
- * spreadsheet = reader.build();
+ * // 2. Pass stream of cell formulas and build spreadsheet
+ * spreadsheet = reader.build(Stream.of("1", "2", "3", "4", "5", "6").iterator());
  */
 public class SpreadsheetReader {
     public static final Pattern REGEX_HEADER = Pattern.compile("^(?<width>\\d+)\\s+(?<height>\\d+)$");
