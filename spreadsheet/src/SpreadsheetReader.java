@@ -11,7 +11,7 @@ import java.util.regex.Pattern;
  * spreadsheet = reader.build(Stream.of("1", "2", "3", "4", "5", "6").iterator());
  */
 public class SpreadsheetReader {
-    public static final Pattern REGEX_HEADER = Pattern.compile("^(?<width>\\d+)\\s+(?<height>\\d+)$");
+    public static final Pattern REGEX_HEADER = Pattern.compile("^\\s*(?<width>\\d+)\\s+(?<height>\\d+)\\s*$");
 
     private int width, height;
 
