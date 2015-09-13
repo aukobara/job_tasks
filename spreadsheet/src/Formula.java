@@ -1,26 +1,26 @@
 import java.util.*;
 import java.util.function.DoubleBinaryOperator;
-import java.util.regex.Matcher;
-import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
  * Spreadsheet Formula representation.
  */
 public class Formula {
-    private static final Pattern REGEXP_TOKENS =
-            Pattern.compile("(?<const>[-]?\\d+)|(?<op>[-+*/])(?=\\s|$)|(?<ref>[A-Z]\\d+)|(?<inc>[+][+]|[-][-])|\\s+");
-    private static final FormulaToken[] tokenPrototypes = {ConstToken.prototype,
-            BinaryOpToken.prototype, ReferenceToken.prototype, IncToken.prototype};
 
-    private Double value;
+    protected static final FormulaParser parser = FormulaParser.getInstance();
+
+    private double value;
+    private boolean valueSet;
+
+    private Boolean hasDependencies;
 
     // Cached tokens
-    private Deque<FormulaToken> tokens;
+    private List<FormulaToken> tokens;
+    // Cached dependencies to other formulas
     private Set<Formula> dependencies;
 
+    // Next two fields are used internally during sorting phase only.
     private Set<Formula> dependentFrom;
-
     private boolean visited = false;
 
     public Formula(String original) {
@@ -33,15 +33,15 @@ public class Formula {
     }
 
     public String getText() {
-        return String.join(" ", tokens.stream().map(FormulaToken::toString).toArray(String[]::new));
+        if (tokens != null) {
+            return String.join(" ", tokens.stream().map(FormulaToken::toString).toArray(String[]::new));
+        } else {
+            return !valueSet? "null": Double.toString(value);
+        }
     }
 
     public boolean isCalculated() {
-        return value != null;
-    }
-
-    public boolean hasDependencies(Spreadsheet spreadsheet) {
-        return !getDependencies(spreadsheet).isEmpty();
+        return valueSet;
     }
 
     /**
@@ -55,9 +55,13 @@ public class Formula {
         return calc(spreadsheet, true);
     }
 
-    public double calc(final Spreadsheet spreadsheet, boolean precalcDependencies) {
-        if (value == null) {
-            if (precalcDependencies && hasDependencies(spreadsheet)) {
+    public double calc(final Spreadsheet spreadsheet, boolean preCalcDependencies) {
+        if (!this.valueSet) {
+
+            // Check this formula is not in another cell calculation
+            assert !this.visited && this.dependentFrom == null;
+
+            if (preCalcDependencies && hasDependencies()) {
                 // This formula has dependencies on other spreadsheet's cells.
                 // It is required to calculate them before in topological order to avoid deep recursion
                 // and to check cyclic dependencies.
@@ -67,12 +71,14 @@ public class Formula {
             // Make stack of tokens to calculate RPN. Formula tokens must pop and recursively calculate
             // their sub-expressions from context.
             Deque<FormulaToken> context = new ArrayDeque<>(tokens);
-            value = context.pollLast().calc(context, spreadsheet);
+            double value = context.pollLast().calc(context, spreadsheet);
             if (!context.isEmpty()) {
                 throw new IllegalArgumentException("Formula has incorrect order or missed operator: " + this);
             }
+            this.value = value;
+            this.valueSet = true;
         }
-        return value;
+        return this.value;
     }
 
     /**
@@ -91,7 +97,7 @@ public class Formula {
             next.visited = true;
             Set<Formula> dependencies = next.getDependencies(spreadsheet);
             for (Formula dep : dependencies) {
-                if (dep.isCalculated() || !dep.hasDependencies(spreadsheet)) {
+                if (dep.isCalculated() || !dep.hasDependencies()) {
                     // Simple node. Skip.
                     continue;
                 }
@@ -108,6 +114,11 @@ public class Formula {
             }
         }
 
+        if (this.dependentFrom != null) {
+            // Detected reference to top node from itself or one of child nodes
+            throw new IllegalArgumentException("Cyclic dependency detected");
+        }
+
         Deque<Formula> orderedFormulas = new LinkedList<>();
         Deque<Formula> upperFormulas = new ArrayDeque<>();
         upperFormulas.add(this);
@@ -116,7 +127,7 @@ public class Formula {
             orderedFormulas.addFirst(next);
 
             // Due to node has been promoted to sorted dependent nodes become next candidates.
-            // Cleat their references to promoted node.
+            // Clear their references to promoted node.
             Set<Formula> dependencies = next.getDependencies(spreadsheet);
             for (Formula dep : dependencies) {
                 dep.visited = false;
@@ -140,51 +151,39 @@ public class Formula {
             if (next.dependentFrom != null) {
                 throw new IllegalArgumentException("Cyclic dependency detected");
             }
-            if (next.isCalculated() || !next.hasDependencies(spreadsheet)) {
+            if (next.isCalculated() || !next.hasDependencies()) {
                 continue;
             }
             formulas.addAll(next.getDependencies(spreadsheet));
         }
 
         // Now everything is ready to calculate all nodes in topological order.
-        // Nested calculations should not calculate their dependencies (precalcDependencies=false)
+        // Nested calculations should not calculate their dependencies (preCalcDependencies=false)
         // because whole tree will be calculated here.
         orderedFormulas.forEach(f -> f.calc(spreadsheet, false));
     }
 
+    public boolean hasDependencies() {
+        if (this.hasDependencies == null) {
+            this.hasDependencies = this.tokens.stream().anyMatch(token -> token instanceof ReferenceToken);
+        }
+        return hasDependencies;
+    }
+
     public Set<Formula> getDependencies(Spreadsheet spreadsheet) {
         if (this.dependencies == null) {
-            this.dependencies = tokens.stream().filter(token -> token instanceof ReferenceToken).
-                    map(token -> ((ReferenceToken) token).getReferencedFormula(spreadsheet)).
-                    collect(Collectors.toSet());
+            if (hasDependencies()) {
+                this.dependencies = tokens.stream().filter(token -> token instanceof ReferenceToken).
+                        map(token -> ((ReferenceToken) token).getReferencedFormula(spreadsheet)).
+                        collect(Collectors.toSet());
+            }
         }
         return this.dependencies;
     }
 
-    private Deque<FormulaToken> parse(String original) {
+    private List<FormulaToken> parse(String original) {
         if (this.tokens == null) {
-            Deque<FormulaToken> tokens = new ArrayDeque<>();
-            Matcher m = REGEXP_TOKENS.matcher(original);
-            int prevPos = 0;
-            while (m.find()) {
-                int currentPos = m.start();
-                if (currentPos > prevPos) {
-                    // Some unknown characters detected which are not described in regexp.
-                    throw new IllegalArgumentException("Invalid formula: " + original);
-                }
-                for (int i = 1; i <= m.groupCount(); i++) {
-                    if (m.group(i) != null) {
-                        FormulaToken token = tokenPrototypes[i - 1].newToken(m.group(i));
-                        tokens.add(token);
-                        break;
-                    }
-                }
-                prevPos = m.end();
-            }
-            if (tokens.isEmpty()) {
-                throw new IllegalArgumentException("Invalid formula: " + original);
-            }
-            this.tokens = tokens;
+            this.tokens = parser.parseTokens(original);
         }
         return this.tokens;
     }
@@ -197,23 +196,25 @@ public class Formula {
  */
 abstract class FormulaToken {
 
-    public FormulaToken newToken(String tokenString) {
+    public FormulaToken newToken(CharSequence formulaString, int startPos, int endPos) {
         FormulaToken token;
         try {
             token = this.getClass().newInstance();
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
-        token.setTokenString(tokenString);
+        token.setTokenString(formulaString, startPos, endPos);
         return token;
     }
 
     /**
-     * Implementations should parse string to internal binary format and release tokenString.
+     * Implementations should parse string to internal binary format and don't keep formulaString.
      *
-     * @param tokenString expression component
+     * @param formulaString whole formula that contains this token
+     * @param startPos token start position in formula (inclusive)
+     * @param endPos token end position in formula (exclusive)
      */
-    protected abstract void setTokenString(String tokenString);
+    protected abstract void setTokenString(CharSequence formulaString, int startPos, int endPos);
 
     /**
      * Calculate single expression component using expression context with next parts.
@@ -235,8 +236,8 @@ class ConstToken extends FormulaToken {
     private int value;
 
     @Override
-    protected void setTokenString(String tokenString) {
-        value = Integer.parseInt(tokenString);
+    protected void setTokenString(CharSequence formulaString, int startPos, int endPos) {
+        value = Formula.parser.parseInt(formulaString, startPos, endPos);
     }
 
     @Override
@@ -255,7 +256,9 @@ class IncToken extends FormulaToken {
     private boolean negative;
 
     @Override
-    protected void setTokenString(String tokenString) { negative = "--".equals(tokenString); }
+    protected void setTokenString(CharSequence formulaString, int startPos, int endPos) {
+        negative = formulaString.charAt(startPos) == '-';
+    }
 
     @Override
     public String toString() {
@@ -272,39 +275,39 @@ class BinaryOpToken extends FormulaToken {
     static final FormulaToken prototype = new BinaryOpToken();
 
     private enum OPERATOR {
-        PLUS("+", (left, right) -> left + right),
-        MINUS("-", (left, right) -> left - right),
-        MULTIPLY("*", (left, right) -> left * right),
-        DIVIDE("/", (left, right) -> left / right);
+        PLUS('+', (left, right) -> left + right),
+        MINUS('-', (left, right) -> left - right),
+        MULTIPLY('*', (left, right) -> left * right),
+        DIVIDE('/', (left, right) -> left / right);
 
-        private static Map<String, OPERATOR> opMap = new HashMap<>();
+        private static Map<Character, OPERATOR> opMap = new HashMap<>();
 
         static {
-            opMap.put(PLUS.opString, PLUS);
-            opMap.put(MINUS.opString, MINUS);
-            opMap.put(MULTIPLY.opString, MULTIPLY);
-            opMap.put(DIVIDE.opString, DIVIDE);
+            opMap.put(PLUS.opChar, PLUS);
+            opMap.put(MINUS.opChar, MINUS);
+            opMap.put(MULTIPLY.opChar, MULTIPLY);
+            opMap.put(DIVIDE.opChar, DIVIDE);
         }
 
-        public static OPERATOR parse(String opString) {
-            OPERATOR op = opMap.get(opString);
+        public static OPERATOR parse(char opChar) {
+            OPERATOR op = opMap.get(opChar);
             if (op == null) {
-                throw new IllegalArgumentException("Invalid operator: " + opString);
+                throw new IllegalArgumentException("Invalid operator: " + opChar);
             }
             return op;
         }
 
-        private final String opString;
+        private final Character opChar;
         private final DoubleBinaryOperator opFunc;
 
-        OPERATOR(String opString, DoubleBinaryOperator opFunc) {
-            this.opString = opString;
+        OPERATOR(Character opChar, DoubleBinaryOperator opFunc) {
+            this.opChar = opChar;
             this.opFunc = opFunc;
         }
 
         @Override
         public String toString() {
-            return opString;
+            return "" + opChar;
         }
 
         public double calc(double left, double right) {
@@ -315,8 +318,8 @@ class BinaryOpToken extends FormulaToken {
     private OPERATOR op;
 
     @Override
-    protected void setTokenString(String tokenString) {
-        op = OPERATOR.parse(tokenString);
+    protected void setTokenString(CharSequence formulaString, int startPos, int endPos) {
+        op = OPERATOR.parse(formulaString.charAt(startPos));
     }
 
     @Override
@@ -337,9 +340,9 @@ class ReferenceToken extends FormulaToken {
     private int refColumn = -1, refRow = -1;
 
     @Override
-    protected void setTokenString(String tokenString) {
-        refColumn = Integer.parseInt(tokenString.substring(1)) - 1;
-        refRow = tokenString.charAt(0) - 'A';
+    protected void setTokenString(CharSequence formulaString, int startPos, int endPos) {
+        refColumn = Formula.parser.parseInt(formulaString, startPos, endPos) - 1;
+        refRow = formulaString.charAt(startPos) - 'A';
     }
 
     @Override

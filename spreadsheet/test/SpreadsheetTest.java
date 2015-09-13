@@ -143,4 +143,16 @@ public class SpreadsheetTest {
         Spreadsheet spreadsheet = buildTestSpreadsheet("2 2", "A2 B2 +", "B1 B2 +", "B2 B2 +", "1");
         assertEquals(4d, spreadsheet.calcCellValue(0, 0), 0);
     }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReferenceToSelf() {
+        Spreadsheet spreadsheet = buildTestSpreadsheet("1 1", "A1");
+        spreadsheet.calcCellValue(0, 0);
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testReferenceToSelfIndirect() {
+        Spreadsheet spreadsheet = buildTestSpreadsheet("2 1", "A2 A1");
+        spreadsheet.calcCellValue(0, 0);
+    }
 }

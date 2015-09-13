@@ -7,18 +7,19 @@ import java.io.*;
 public class Spreadsheet {
 
     private final Formula[][] matrix;
+    private final int width, height;
 
     public Spreadsheet(SpreadsheetReader reader) {
-        this.matrix = new Formula[reader.getHeight()][reader.getWidth()];
+        height = reader.getHeight();
+        width = reader.getWidth();
+        matrix = new Formula[height][width];
     }
 
     public int getHeight() {
-        return this.matrix.length;
+        return height;
     }
 
-    public int getWidth() {
-        return this.matrix[0].length;
-    }
+    public int getWidth() { return width; }
 
     public Formula getCellFormula(int row, int column) {
         return this.matrix[row][column];
@@ -61,10 +62,9 @@ public class Spreadsheet {
         SpreadsheetReader reader = new SpreadsheetReader(header);
         Spreadsheet spreadsheet = reader.build(input.lines().iterator());
 
-        log(String.format("Spreadsheet loaded into memory: %dms. Free memory: %d",
-                System.currentTimeMillis() - start, Runtime.getRuntime().freeMemory()));
-
         long startCalc = System.currentTimeMillis();
+        log(String.format("Spreadsheet loaded into memory: %dms. Free memory: %d",
+                startCalc - start, Runtime.getRuntime().freeMemory()));
 
         // 3. Calculate and output cells
         System.out.println(String.format("%d %d", spreadsheet.getWidth(), spreadsheet.getHeight()));
