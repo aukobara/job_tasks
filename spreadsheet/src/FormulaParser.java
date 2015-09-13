@@ -3,9 +3,6 @@ import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-/**
- * Attempt to write fast parser without regexp
- */
 public interface FormulaParser {
 
      FormulaToken[] prototypes = {
@@ -22,8 +19,8 @@ public interface FormulaParser {
 }
 
 abstract class AbstractFormulaParser implements FormulaParser {
+    private static final int[] pow = {1, 10, 100, 1000, 10000, 100000, 1000000, 10000000, 100000000, 1000000000};
     public int parseInt(CharSequence tokenBuf, int from, int to) {
-        final int[] pow = {1, 10, 100, 1000, 10000, 100000};
         int result = 0;
         for (int i = to - 1; i >= from; i--) {
             char c = tokenBuf.charAt(i);
@@ -37,6 +34,9 @@ abstract class AbstractFormulaParser implements FormulaParser {
     }
 }
 
+/**
+ * Attempt to write fast parser without regexp
+ */
 class FastFormulaParser extends AbstractFormulaParser {
     private static final int TOKEN_NUMBER = 0;
     private static final int TOKEN_OP = 1;

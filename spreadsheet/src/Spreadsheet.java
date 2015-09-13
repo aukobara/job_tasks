@@ -6,13 +6,19 @@ import java.io.*;
  */
 public class Spreadsheet {
 
+    private final double[][] values;
     private final Formula[][] matrix;
     private final int width, height;
 
     public Spreadsheet(SpreadsheetReader reader) {
-        height = reader.getHeight();
-        width = reader.getWidth();
+        this(reader.getHeight(), reader.getWidth());
+    }
+
+    public Spreadsheet(int height, int width) {
+        this.height = height;
+        this.width = width;
         matrix = new Formula[height][width];
+        values = new double[height][width];
     }
 
     public int getHeight() {
@@ -25,12 +31,24 @@ public class Spreadsheet {
         return this.matrix[row][column];
     }
 
-    public void setCellFormula(int row, int column, String formula) {
-        this.matrix[row][column] = new Formula(formula);
+    public void setCellFormula(int row, int column, String formulaString) {
+        Formula formula = new Formula(formulaString);
+        if (formula.hasDependencies()) {
+            this.matrix[row][column] = formula;
+        } else {
+            this.values[row][column] = formula.calc();
+        }
     }
 
     public double calcCellValue(int row, int column) {
-        return this.matrix[row][column].calc(this);
+        Formula formula = this.matrix[row][column];
+        if (formula == null) {
+            return this.values[row][column];
+        }
+        double value = formula.calc(this);
+        this.values[row][column] = value;
+        this.matrix[row][column] = null;
+        return value;
     }
 
     /**
@@ -67,6 +85,7 @@ public class Spreadsheet {
                 startCalc - start, Runtime.getRuntime().freeMemory()));
 
         // 3. Calculate and output cells
+        System.setOut(new PrintStream(new BufferedOutputStream(System.out, 64000)));
         System.out.println(String.format("%d %d", spreadsheet.getWidth(), spreadsheet.getHeight()));
         for (int r = 0; r < spreadsheet.getHeight(); r++) {
             for (int c = 0; c < spreadsheet.getWidth(); c++) {
@@ -79,6 +98,8 @@ public class Spreadsheet {
                     System.exit(-1);
                 }
             }
+//            log(String.format("Row %c passed. Time elapsed: %dms. Free memory: %d", 'A'+r,
+//                    System.currentTimeMillis()-startCalc, Runtime.getRuntime().freeMemory()));
         }
 
         long end = System.currentTimeMillis();

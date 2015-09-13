@@ -36,7 +36,7 @@ public class Formula {
         if (tokens != null) {
             return String.join(" ", tokens.stream().map(FormulaToken::toString).toArray(String[]::new));
         } else {
-            return !valueSet? "null": Double.toString(value);
+            return "<unknown>";
         }
     }
 
@@ -56,29 +56,30 @@ public class Formula {
     }
 
     public double calc(final Spreadsheet spreadsheet, boolean preCalcDependencies) {
-        if (!this.valueSet) {
-
-            // Check this formula is not in another cell calculation
-            assert !this.visited && this.dependentFrom == null;
-
-            if (preCalcDependencies && hasDependencies()) {
-                // This formula has dependencies on other spreadsheet's cells.
-                // It is required to calculate them before in topological order to avoid deep recursion
-                // and to check cyclic dependencies.
-                calcDependencies(spreadsheet);
-            }
-
-            // Make stack of tokens to calculate RPN. Formula tokens must pop and recursively calculate
-            // their sub-expressions from context.
-            Deque<FormulaToken> context = new ArrayDeque<>(tokens);
-            double value = context.pollLast().calc(context, spreadsheet);
-            if (!context.isEmpty()) {
-                throw new IllegalArgumentException("Formula has incorrect order or missed operator: " + this);
-            }
-            this.value = value;
-            this.valueSet = true;
+        if(valueSet) {
+            return value;
         }
-        return this.value;
+
+        // Check this formula is not in another cell calculation
+        assert !this.visited && this.dependentFrom == null;
+
+        if (preCalcDependencies && hasDependencies()) {
+            // This formula has dependencies on other spreadsheet's cells.
+            // It is required to calculate them before in topological order to avoid deep recursion
+            // and to check cyclic dependencies.
+            calcDependencies(spreadsheet);
+        }
+
+        // Make stack of tokens to calculate RPN. Formula tokens must pop and recursively calculate
+        // their sub-expressions from context.
+        Deque<FormulaToken> context = new ArrayDeque<>(tokens);
+        double value = context.pollLast().calc(context, spreadsheet);
+        if (!context.isEmpty()) {
+            throw new IllegalArgumentException("Formula has incorrect order or missed operator: " + this);
+        }
+        this.value = value;
+        this.valueSet = true;
+        return value;
     }
 
     /**
@@ -144,17 +145,19 @@ public class Formula {
         // Do not pre-calculate current node - it will be fully calculated in own caller method.
         orderedFormulas.pollLast().visited = false;
 
-        formulas = new ArrayDeque<>();
-        formulas.add(this);
-        while (!formulas.isEmpty()) {
-            Formula next = formulas.poll();
+        Deque<Formula> childFormulas = new ArrayDeque<>();
+        childFormulas.add(this);
+        while (!childFormulas.isEmpty()) {
+            Formula next = childFormulas.poll();
             if (next.dependentFrom != null) {
                 throw new IllegalArgumentException("Cyclic dependency detected");
             }
-            if (next.isCalculated() || !next.hasDependencies()) {
-                continue;
-            }
-            formulas.addAll(next.getDependencies(spreadsheet));
+            next.getDependencies(spreadsheet).stream().
+                    filter(f -> !f.visited && !f.isCalculated() && f.hasDependencies()).
+                    forEach(f -> {
+                        childFormulas.add(f);
+                        f.visited = true;
+                    });
         }
 
         // Now everything is ready to calculate all nodes in topological order.
@@ -175,6 +178,7 @@ public class Formula {
             if (hasDependencies()) {
                 this.dependencies = tokens.stream().filter(token -> token instanceof ReferenceToken).
                         map(token -> ((ReferenceToken) token).getReferencedFormula(spreadsheet)).
+                        filter(token -> token != null).
                         collect(Collectors.toSet());
             }
         }
@@ -267,6 +271,9 @@ class IncToken extends FormulaToken {
 
     @Override
     public double calc(Deque<FormulaToken> context, Spreadsheet spreadsheet) {
+        if (context.size() < 1) {
+            throw new IllegalArgumentException("Insufficient number of arguments for operator: " + toString());
+        }
         return context.pollLast().calc(context, spreadsheet) + (negative? -1: 1);
     }
 }
@@ -324,6 +331,9 @@ class BinaryOpToken extends FormulaToken {
 
     @Override
     public double calc(Deque<FormulaToken> context, Spreadsheet spreadsheet) {
+        if (context.size() < 2) {
+            throw new IllegalArgumentException("Insufficient number of arguments for operator: " + toString());
+        }
         double right = context.pollLast().calc(context, spreadsheet);
         double left = context.pollLast().calc(context, spreadsheet);
         return op.calc(left, right);

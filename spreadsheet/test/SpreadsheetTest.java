@@ -1,6 +1,8 @@
 import org.junit.Test;
 
+import java.io.*;
 import java.util.Arrays;
+import java.util.Random;
 import java.util.stream.Stream;
 
 import static org.junit.Assert.*;
@@ -32,12 +34,12 @@ public class SpreadsheetTest {
         Spreadsheet spreadsheet = buildTestSpreadsheet("3 2", "1", "2", "3", "4", "5", "6");
         assertEquals(3, spreadsheet.getWidth());
         assertEquals(2, spreadsheet.getHeight());
-        assertEquals("1", spreadsheet.getCellFormula(0, 0).getText());
-        assertEquals("2", spreadsheet.getCellFormula(0, 1).getText());
-        assertEquals("3", spreadsheet.getCellFormula(0, 2).getText());
-        assertEquals("4", spreadsheet.getCellFormula(1, 0).getText());
-        assertEquals("5", spreadsheet.getCellFormula(1, 1).getText());
-        assertEquals("6", spreadsheet.getCellFormula(1, 2).getText());
+        assertEquals(1d, spreadsheet.calcCellValue(0, 0), 0);
+        assertEquals(2d, spreadsheet.calcCellValue(0, 1), 0);
+        assertEquals(3d, spreadsheet.calcCellValue(0, 2), 0);
+        assertEquals(4d, spreadsheet.calcCellValue(1, 0), 0);
+        assertEquals(5d, spreadsheet.calcCellValue(1, 1), 0);
+        assertEquals(6d, spreadsheet.calcCellValue(1, 2), 0);
     }
 
     @Test
@@ -70,7 +72,17 @@ public class SpreadsheetTest {
 
     @Test(expected = IllegalArgumentException.class)
     public void testFormulaInvalidOrder() {
-        assertEquals(3d, new Formula("1 + 2").calc(), 0);
+        new Formula("1 + 2").calc();
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testFormulaOpsWithoutOperands() {
+        new Formula("+ +").calc();
+    }
+
+    @Test(expected = IllegalArgumentException.class)
+    public void testFormulaIncWithoutOperands() {
+        new Formula("++").calc();
     }
 
     @Test
@@ -139,6 +151,14 @@ public class SpreadsheetTest {
     }
 
     @Test
+    public void testSpreadsheetFormulaCyclicDependencyDoubleRef() {
+        Spreadsheet spreadsheet = buildTestSpreadsheet("3 3", "A2", "A3 B2 +", "B3",
+                                                              "C1 C2 +", "B1", "B2 C3 +",
+                                                              "1", "C1", "C2 C1 +");
+        spreadsheet.calcCellValue(0, 0);
+    }
+
+    @Test
     public void testSpreadsheetFormulaDoubleRef() {
         Spreadsheet spreadsheet = buildTestSpreadsheet("2 2", "A2 B2 +", "B1 B2 +", "B2 B2 +", "1");
         assertEquals(4d, spreadsheet.calcCellValue(0, 0), 0);
@@ -155,4 +175,5 @@ public class SpreadsheetTest {
         Spreadsheet spreadsheet = buildTestSpreadsheet("2 1", "A2 A1");
         spreadsheet.calcCellValue(0, 0);
     }
+
 }
